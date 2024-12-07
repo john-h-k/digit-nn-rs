@@ -3,7 +3,7 @@ use std::{
     iter::{self, zip},
 };
 
-use ndarray_npy::NpzReader;
+use ndarray_npy::{NpzReader, NpzWriter};
 use rand::{seq::SliceRandom, RngCore};
 use rand_distr::{Distribution, Normal};
 
@@ -98,7 +98,7 @@ impl Network {
 
             if let Some(ref test_data) = test_data {
                 eprintln!("Evaluating epoch {j}...");
-                let result = self.evaluate(test_data);
+                let result = self.evaluate_test(test_data);
                 let len = test_data.len();
                 eprintln!("Epoch {j}: {result} / {len}");
             } else {
@@ -196,13 +196,37 @@ impl Network {
         output_activations - y
     }
 
-    fn evaluate(&mut self, test_data: &[(Array2<f64>, u8)]) -> usize {
+    pub fn evaluate(&mut self, test_data: &[Array2<f64>]) -> Vec<usize> {
+        test_data
+            .iter()
+            .map(|x| {
+                let output = self.feed_forward(x.clone());
+
+                let flat = output
+                    .clone()
+                    .into_shape_with_order((output.len(),))
+                    .unwrap();
+
+                let (argmax_idx, _) = flat
+                    .indexed_iter()
+                    .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+                    .unwrap();
+
+                argmax_idx
+            })
+            .collect()
+    }
+
+    pub fn evaluate_test(&mut self, test_data: &[(Array2<f64>, u8)]) -> usize {
         test_data
             .iter()
             .map(|(x, y)| {
                 let output = self.feed_forward(x.clone());
 
-                let flat = output.clone().into_shape((output.len(),)).unwrap();
+                let flat = output
+                    .clone()
+                    .into_shape_with_order((output.len(),))
+                    .unwrap();
                 let (argmax_idx, _) = flat
                     .indexed_iter()
                     .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
@@ -217,38 +241,38 @@ impl Network {
             .sum()
     }
 
-    // pub fn save(&self, path: &str) -> std::io::Result<()> {
-    //     let mut npz = NpzWriter::new(File::create(path)?);
-    //     for (i, w) in self.weights.iter().enumerate() {
-    //         npz.add_array(&format!("weight_{}", i), w)?;
-    //     }
-    //     for (i, b) in self.biases.iter().enumerate() {
-    //         npz.add_array(&format!("bias_{}", i), b)?;
-    //     }
-    //     Ok(())
-    // }
+    pub fn save(&self, path: &str) -> std::io::Result<()> {
+        let mut npz = NpzWriter::new(File::create(path)?);
+        for (i, w) in self.weights.iter().enumerate() {
+            npz.add_array(&format!("weight_{}", i), w).unwrap();
+        }
+        for (i, b) in self.biases.iter().enumerate() {
+            npz.add_array(&format!("bias_{}", i), b).unwrap();
+        }
+        Ok(())
+    }
 
-    // pub fn load(path: &str, sizes: Vec<usize>) -> std::io::Result<Self> {
-    //     let mut npz = NpzReader::new(File::open(path)?)?;
-    //     let num_layers = sizes.len();
-    //     let mut biases = Vec::new();
-    //     let mut weights = Vec::new();
+    pub fn load(path: &str, sizes: Vec<usize>) -> std::io::Result<Self> {
+        let mut npz = NpzReader::new(File::open(path)?).unwrap();
+        let num_layers = sizes.len();
+        let mut biases = Vec::new();
+        let mut weights = Vec::new();
 
-    //     for i in 0..num_layers - 1 {
-    //         let w: Array2<f64> = npz.by_name(&format!("weight_{}", i))?;
-    //         weights.push(w);
-    //     }
+        for i in 0..num_layers - 1 {
+            let w: Array2<f64> = npz.by_name(&format!("weight_{}", i)).unwrap();
+            weights.push(w);
+        }
 
-    //     for i in 0..num_layers - 1 {
-    //         let b: Array2<f64> = npz.by_name(&format!("bias_{}", i))?;
-    //         biases.push(b);
-    //     }
+        for i in 0..num_layers - 1 {
+            let b: Array2<f64> = npz.by_name(&format!("bias_{}", i)).unwrap();
+            biases.push(b);
+        }
 
-    //     Ok(Self {
-    //         num_layers,
-    //         sizes,
-    //         biases,
-    //         weights,
-    //     })
-    // }
+        Ok(Self {
+            num_layers,
+            sizes,
+            biases,
+            weights,
+        })
+    }
 }
